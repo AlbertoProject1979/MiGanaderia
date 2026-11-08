@@ -29,6 +29,9 @@ input,select,textarea{text-transform:uppercase;font:inherit;width:100%;padding:9
 .ck .cb{margin:0 auto}
 tr.done .cb::after{content:"\2715"}
 tr.done td:not(:first-child){text-decoration:line-through;color:var(--mut)}
+.lr{grid-template-columns:1fr}
+.lr .it{display:flex}
+.lr .it .im{width:120px;flex:none;min-height:96px;aspect-ratio:auto}
 .v{flex:1;background:#2e7d32;color:#fff;border-color:#2e7d32;font-weight:600}
 .bad{border-color:var(--dg)}
 label{display:block;font-size:13px;color:var(--mut);margin-bottom:3px}
@@ -77,33 +80,26 @@ var claude={use:async function(n){
 try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
 if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}
 
-function jpgPdf(jp,cw,ch,w,h){
-  var parts=[],off=[],len=0,te=new TextEncoder();
-  function add(x){var b=typeof x=='string'?te.encode(x):x;parts.push(b);len+=b.length}
-  function start(i){off[i]=len;add(i+' 0 obj\n')}
-  var n=jp.length,kids=[],i;
-  add('%PDF-1.4\n');
-  start(1);add('<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
-  for(i=0;i<n;i++)kids.push((3+3*i)+' 0 R');
-  start(2);add('<< /Type /Pages /Kids ['+kids.join(' ')+'] /Count '+n+' >>\nendobj\n');
-  for(i=0;i<n;i++){
-    var p=3+3*i,c=p+1,im=p+2,cs='q '+w+' 0 0 '+h+' 0 0 cm /Im0 Do Q';
-    start(p);add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+w+' '+h+'] /Resources << /XObject << /Im0 '+im+' 0 R >> >> /Contents '+c+' 0 R >>\nendobj\n');
-    start(c);add('<< /Length '+cs.length+' >>\nstream\n'+cs+'\nendstream\nendobj\n');
-    start(im);add('<< /Type /XObject /Subtype /Image /Width '+cw+' /Height '+ch+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+jp[i].length+' >>\nstream\n');add(jp[i]);add('\nendstream\nendobj\n');
-  }
-  var xr=len,tot=3+3*n,x='xref\n0 '+tot+'\n0000000000 65535 f \n';
-  for(i=1;i<tot;i++)x+=('0000000000'+off[i]).slice(-10)+' 00000 n \n';
-  add(x+'trailer\n<< /Size '+tot+' /Root 1 0 R >>\nstartxref\n'+xr+'\n%%EOF');
-  return new Blob(parts,{type:'application/pdf'});
-}
-var db=null,assets=null,col=null,pcol=null,acol=null,ajustes={saneamiento:''},animals=[],parcelas=[],pscr=false,chk=false,curP=null,cur=null,q='',local=false,status='';
+var db=null,assets=null,col=null,pcol=null,acol=null,ajustes={saneamiento:''},animals=[],parcelas=[],pend=0,pscr=false,chk=false,curP=null,cur=null,q='',local=false,status='';
 function $(s){return document.querySelector(s)}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 function uid(){return 'a'+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
-function blank(){return{id:uid(),crotal:'',nombre:'',nacimiento:'',sexo:'Hembra',parcela:'',raza:'',fotoCabeza:'',fotoLateral:'',partos:[],vet:[],notas:''}}
+function blank(){return{id:uid(),crotal:'',ncrotales:'',nombre:'',nacimiento:'',sexo:'',parcela:'',raza:'',madre:'',madreId:'',fotoCabeza:'',fotoLateral:'',partos:[],vet:[],notas:''}}
 function d(s){return s?new Date(s+'T00:00:00'):null}
-function edad(s){var n=d(s);if(!n)return '';var t=new Date(),m=(t.getFullYear()-n.getFullYear())*12+t.getMonth()-n.getMonth();if(t.getDate()<n.getDate())m--;if(m<0)return '';var a=Math.floor(m/12),r=m%12;return (a?a+(a==1?' año':' años'):'')+(a&&r?' y ':'')+((r||!a)?r+(r==1?' mes':' meses'):'')}
+function edad(s){
+  var n=d(s);if(!n)return '';
+  var t=new Date();t=new Date(t.getFullYear(),t.getMonth(),t.getDate());
+  var m=(t.getFullYear()-n.getFullYear())*12+t.getMonth()-n.getMonth();
+  if(t.getDate()<n.getDate())m--;
+  if(m<0)return '';
+  if(m>=12){var a=Math.floor(m/12),r=m%12;return a+(a==1?' año':' años')+(r?' y '+r+(r==1?' mes':' meses'):'')}
+  var b=new Date(n.getFullYear(),n.getMonth()+m,1),ult=new Date(b.getFullYear(),b.getMonth()+1,0).getDate();
+  b.setDate(Math.min(n.getDate(),ult));
+  var dd=Math.round((t-b)/864e5);
+  if(!m)return dd+(dd==1?' día':' días');
+  if(!dd)return m+(m==1?' mes':' meses');
+  return m+(m==1?' mes':' meses')+' y '+dd+(dd==1?' día':' días');
+}
 function fmt(s){var x=d(s);return x?x.toLocaleDateString('es-ES'):''}
 function intervalos(p){var f=p.map(function(x){return x.fecha}).filter(Boolean).sort(),o=[];for(var i=1;i<f.length;i++){o.push(Math.round((d(f[i])-d(f[i-1]))/864e5))}return o}
 function mesesTxt(dias){return dias+' días (≈ '+(dias/30.44).toFixed(1).replace('.',',')+' meses)'}
@@ -120,21 +116,26 @@ async function init(){
 
 function render(){
   var a=$('#app'); if(!a)return;
-  a.innerHTML=curP?parcelaForm():chk?checkView():pscr?parcelasView():cur?formView():listView();
+  a.innerHTML=curP?parcelaForm():chk?checkView():pend=='INFORMES'?informesView():pend?pendView():pscr?parcelasView():cur?formView():listView();
 }
 function listView(){
-  var f=animals.filter(function(x){var t=(x.crotal+' '+x.nombre+' '+(x.raza||'')).toLowerCase();return t.indexOf(q.toLowerCase())>-1}).sort(function(x,y){return (x.nombre||'').localeCompare(y.nombre||'')});
-  var h='<div class="top"><h1>🐄 Mi ganadería</h1><div style="display:flex;gap:8px;width:100%"><button class="v" onclick="nuevaP()">PARCELA</button><button class="v" onclick="nuevo()">ANIMAL</button><button class="v" onclick="chk=true;render()">CHECK LIST</button></div></div>'+
-  '<input id="q" placeholder="Buscar por crotal, nombre o raza…" value="'+esc(q)+'" oninput="q=this.value;renderList()">'+(status?'<div class="msg">'+esc(status)+'</div>':'')+'<div class="msg"><a onclick="verParcelas()" style="text-decoration:underline;cursor:pointer">Ver parcelas ('+parcelas.length+')</a></div>'+
-  '<div class="list" id="lst">'+(q?cards(f):'')+'</div>'+resumen()+
-  '<h2>Copia de seguridad</h2><div class="card"><div class="ro" style="flex-wrap:wrap;margin:0"><button class="s" onclick="expCsv(\'partos\')">⬇ Excel: fichas y partos</button><button class="s" onclick="expCsv(\'vet\')">⬇ Excel: veterinario</button><button class="s" onclick="expJson()">⬇ Copia completa (.json)</button><button class="s" onclick="impJson()">⬆ Restaurar copia</button></div><div class="msg" id="bm">'+(ajustes.lastBackup?'Última copia completa: '+isoToEs(ajustes.lastBackup)+'. ':'Aún no has hecho ninguna copia completa. ')+'Los datos solo están en este móvil: haz copias a menudo. Los archivos Excel no incluyen las fotos; la copia completa (.json) sí.</div></div>';
-  return h;
+  return '<div class="top"><h1>🐄 Mi ganadería</h1><div style="display:flex;gap:8px;width:100%"><button class="v" onclick="nuevaP()">PARCELA</button><button class="v" onclick="nuevo()">ANIMAL</button><button class="v" onclick="chk=true;render()">CHECK LIST</button></div></div>'+
+  '<input id="q" placeholder="Buscar por número, código, nombre, raza o parcela…" value="'+esc(q)+'" oninput="q=this.value;renderList()">'+(status?'<div class="msg">'+esc(status)+'</div>':'')+
+  '<div class="list lr" id="lst">'+resultados()+'</div>'+
+  '<div class="ro" style="margin:12px 0 0"><button class="v" onclick="pend=\'VETERINARIO\';render()">VETERINARIO</button><button class="v" onclick="pend=\'INFORMES\';render()">INFORMES</button></div>'+
+  resumen()+cajaVacia('AVISOS','No hay avisos.')+cajaVacia('TAREAS','No hay tareas.')+
+  '<div class="ro" style="margin-top:18px"><button style="flex:1;font-weight:700" onclick="expJson()">COPIA DE SEGURIDAD</button><button style="flex:1;font-weight:700" onclick="impJson()">RESTAURAR COPIA</button></div><div class="msg" id="bm" style="text-align:center">'+bmTxt()+'</div>';
 }
 function cards(f){
   if(!f.length)return '<div class="msg">No hay fichas todavía.</div>';
-  return f.map(function(x){return '<div class="card it" onclick="abrir(\''+x.id+'\')"><div class="im">'+(x.fotoLateral?'<img src="'+esc(x.fotoLateral)+'" alt="">':'🐂')+'</div><div class="tx"><b>'+esc(titulo(x)=='Nueva ficha'?'Sin nombre':titulo(x))+'</b><span>Crotal '+esc(x.crotal||'—')+'</span><br><span>'+esc(edad(x.nacimiento))+'</span>'+(nomP(x.parcela)?'<br><span>📍 '+esc(nomP(x.parcela))+'</span>':'')+'</div></div>'}).join('');
+  return f.map(function(x){
+    var t=tipo(x),g=gestion(x),fase=g&&g.ph.length?g.ph.join(' Y '):'',pa=nomP(x.parcela),ed=edad(x.nacimiento);
+    return '<div class="card it" onclick="abrir(\''+x.id+'\')"><div class="im">'+(x.fotoLateral?'<img src="'+esc(x.fotoLateral)+'" alt="">':'🐂')+'</div><div class="tx" style="font-size:14px;color:var(--tx)">'+
+      '<div><b>'+tituloHtml(x)+'</b>'+(x.crotal?' '+esc(x.crotal):'')+'</div>'+
+      (t&&t!='—'?'<div style="margin-top:4px"><b>'+esc(t)+(fase?' · '+esc(fase):'')+'</b></div>':'')+
+      '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:2px 14px"><span>'+(ed?esc(ed):'—')+'</span><span>📍 '+(pa?esc(pa):'Sin ubicación')+'</span></div></div></div>';
+  }).join('');
 }
-function renderList(){var f=animals.filter(function(x){var t=(x.crotal+' '+x.nombre+' '+(x.raza||'')).toLowerCase();return t.indexOf(q.toLowerCase())>-1}).sort(function(x,y){return (x.nombre||'').localeCompare(y.nombre||'')});$('#lst').innerHTML=q?cards(f):''}
 function nuevo(){cur=blank();cur._new=true;render()}
 function abrir(id){var x=animals.find(function(z){return z.id===id});cur=JSON.parse(JSON.stringify(x));render()}
 function volver(){cur=null;render()}
@@ -142,16 +143,16 @@ function volver(){cur=null;render()}
 function photo(k,t){return '<div><label>'+t+'</label><div class="ph" id="ph_'+k+'">'+(cur[k]?'<img src="'+esc(cur[k])+'" alt="'+t+'">':'Sin foto')+'</div><div class="ro"><button class="s" onclick="pick(\''+k+'\')">📷 '+(cur[k]?'Cambiar':'Añadir')+'</button>'+(cur[k]?'<button class="s d" onclick="quitar(\''+k+'\')">Quitar</button>':'')+'</div></div>'}
 function formView(){
   var x=cur,iv=intervalos(x.partos),med=iv.length?Math.round(iv.reduce(function(a,b){return a+b},0)/iv.length):null;
-  var h='<div class="top"><button onclick="volver()" aria-label="Volver" style="display:flex;align-items:center;justify-content:center;width:48px;height:44px;padding:0"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1 id="tt">'+esc(titulo(x))+'</h1></div>'+
+  var h='<div class="top"><button onclick="volver()" aria-label="Volver" style="display:flex;align-items:center;justify-content:center;width:48px;height:44px;padding:0"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1 id="tt">'+tituloHtml(x)+'</h1></div>'+
   '<div class="card"><div class="g">'+
-  '<div><label>Nº de crotal</label><input value="'+esc(x.crotal)+'" oninput="cur.crotal=this.value;cur._dirty=1;tit()"></div>'+
+  '<div><label>Número de Identificación</label><input maxlength="14" placeholder="ES000000000000" autocapitalize="characters" value="'+esc(x.crotal)+'" oninput="idInp(this)" onchange="idFin(this)"></div>'+
   '<div><label>Nombre</label><input value="'+esc(x.nombre)+'" oninput="cur.nombre=this.value;cur._dirty=1;tit()"></div>'+
   '<div><label>Fecha de nacimiento</label><input type="text" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="'+esc(isoToEs(x.nacimiento))+'" oninput="fechaEs(this)"></div>'+
   '<div><label>Edad</label><div id="ed" style="padding:9px 0;font-weight:600">'+(esc(edad(x.nacimiento))||'—')+'</div></div>'+
-  '<div><label>Sexo</label><select onchange="cur.sexo=this.value;cur._dirty=1"><option'+(x.sexo=='Hembra'?' selected':'')+'>Hembra</option><option'+(x.sexo=='Macho'?' selected':'')+'>Macho</option></select></div>'+
-  '<div><label>Raza</label><input value="'+esc(x.raza)+'" oninput="cur.raza=this.value;cur._dirty=1"></div></div></div>'+
-  parcelaSel(x)+'<h2>Fotos</h2><div class="g">'+photo('fotoCabeza','Cabeza (de frente)')+photo('fotoLateral','Animal entero (lateral)')+'</div><div class="msg" id="pm"></div>'+
-  '<h2>Partos</h2><div class="card"><div class="rows"><table><tr><th>Fecha parto</th><th>Sexo ternero</th><th>Destino</th><th>Fecha venta</th><th>Valor (€)</th><th>Intervalo</th><th></th></tr>'+
+  '<div><label>Sexo</label><select onchange="cur.sexo=this.value;cur._dirty=1;render()"><option value=""'+(x.sexo?'':' selected')+'>Sin definir</option><option'+(x.sexo=='Macho'?' selected':'')+'>Macho</option><option'+(x.sexo=='Hembra'?' selected':'')+'>Hembra</option></select></div>'+
+  '<div><label>Raza</label><input value="'+esc(x.raza)+'" oninput="cur.raza=this.value;cur._dirty=1"></div></div><div style="margin-top:10px"><label>Número de crotales</label><div style="display:flex;align-items:center;gap:14px"><select style="max-width:110px" onchange="ncInp(this)">'+ncOpts(x)+'</select><div id="ncIcon" style="display:flex;align-items:center;gap:8px">'+ncIcon(x.ncrotales)+'</div></div></div><div id="mad">'+madreHtml(x)+'</div></div>'+
+  ternerosHtml(x)+parcelaSel(x)+'<h2>Fotos</h2><div class="g">'+photo('fotoCabeza','Cabeza (de frente)')+photo('fotoLateral','Animal entero (lateral)')+'</div><div class="msg" id="pm"></div>'+
+  (x.sexo=='Hembra'?'<h2>Partos</h2><div class="card"><div class="rows"><table><tr><th>Fecha parto</th><th>Sexo ternero</th><th>Destino</th><th>Fecha venta</th><th>Valor (€)</th><th>Intervalo</th><th></th></tr>'+
   x.partos.map(function(p,i){return '<tr><td><input type="text" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" style="min-width:104px" value="'+esc(isoToEs(p.fecha))+'" oninput="fechaCampo(this,cur.partos['+i+'],\'fecha\')" onchange="fechaFin(this,1)"></td>'+
   '<td><select onchange="cur.partos['+i+'].sexo=this.value;cur._dirty=1"><option></option><option'+(p.sexo=='Macho'?' selected':'')+'>Macho</option><option'+(p.sexo=='Hembra'?' selected':'')+'>Hembra</option></select></td>'+
   '<td><select onchange="cur.partos['+i+'].destino=this.value;cur._dirty=1;render()"><option></option><option'+(p.destino=='Vendido'?' selected':'')+'>Vendido</option><option'+(p.destino=='Recría'?' selected':'')+'>Recría</option><option'+(p.destino=='Muerto'?' selected':'')+'>Muerto</option></select></td>'+
@@ -159,7 +160,7 @@ function formView(){
   '<td><input type="number" step="0.01" inputmode="decimal" '+(p.destino=='Vendido'?'':'disabled ')+'value="'+esc(p.valor)+'" oninput="cur.partos['+i+'].valor=this.value;cur._dirty=1"></td>'+
   '<td style="white-space:nowrap">'+ivTxt(i)+'</td><td><button class="s d" onclick="cur.partos.splice('+i+',1);render()">✕</button></td></tr>'}).join('')+
   '</table></div><button class="s" onclick="cur.partos.push({fecha:\'\',sexo:\'\',destino:\'\',venta:\'\',valor:\'\'});cur._dirty=1;render()">+ Añadir parto</button>'+
-  '<div style="margin-top:10px"><span class="k">Partos: '+x.partos.length+'</span>'+(med!=null?'<span class="k">Intervalo medio entre partos: '+mesesTxt(med)+'</span>':'')+'</div></div>'+
+  '<div style="margin-top:10px"><span class="k">Partos: '+x.partos.length+'</span>'+(med!=null?'<span class="k">Intervalo medio entre partos: '+mesesTxt(med)+'</span>':'')+'</div></div>':'')+gestionHtml(x)+
   '<h2>Datos veterinarios</h2><div class="card"><div class="rows"><table><tr><th>Fecha</th><th>Tipo</th><th>Descripción / producto</th><th>Veterinario</th><th>Notas</th><th></th></tr>'+
   x.vet.map(function(v,i){return '<tr><td><input type="text" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" style="min-width:104px" value="'+esc(isoToEs(v.fecha))+'" oninput="fechaCampo(this,cur.vet['+i+'],\'fecha\')" onchange="fechaFin(this,0)"></td>'+
   '<td><select onchange="cur.vet['+i+'].tipo=this.value;cur._dirty=1">'+['Vacuna','Tratamiento','Revisión','Saneamiento','Desparasitación','Análisis','Otro'].map(function(t){return '<option'+(v.tipo==t?' selected':'')+'>'+t+'</option>'}).join('')+'</select></td>'+
@@ -169,7 +170,7 @@ function formView(){
   '<td><button class="s d" onclick="cur.vet.splice('+i+',1);render()">✕</button></td></tr>'}).join('')+
   '</table></div><button class="s" onclick="cur.vet.push({fecha:\'\',tipo:\'Vacuna\',desc:\'\',vet:\'\',notas:\'\'});cur._dirty=1;render()">+ Añadir registro</button></div>'+
   '<h2>Notas</h2><textarea rows="3" oninput="cur.notas=this.value;cur._dirty=1">'+esc(x.notas)+'</textarea>'+
-  '<div class="bar"><button class="d" onclick="borrar()"'+(cur._new?' style="visibility:hidden"':'')+'>Eliminar</button><button class="p" onclick="guardar()">Guardar ficha</button></div><div class="msg" id="sm"></div>';
+  '<div class="bar"><button class="d" onclick="borrar()"'+(cur._new?' style="visibility:hidden"':'')+'>Eliminar</button><button onclick="pdfFicha()">⬇ PDF</button><button class="p" onclick="guardar()">Guardar ficha</button></div><div class="msg" id="sm"></div>';
   return h;
 }
 function ivTxt(i){var f=cur.partos.map(function(p,k){return{f:p.fecha,k:k}}).filter(function(p){return p.f}).sort(function(a,b){return a.f<b.f?-1:1});var pos=f.findIndex(function(p){return p.k===i});if(pos<1)return '—';var n=Math.round((d(f[pos].f)-d(f[pos-1].f))/864e5);return n+' d (≈ '+(n/30.44).toFixed(1).replace('.',',')+' m)'}
@@ -193,8 +194,9 @@ async function guardar(){
   var o=JSON.parse(JSON.stringify(cur));delete o._dirty;delete o._new;
   ['crotal','nombre','raza','notas'].forEach(function(k){o[k]=String(o[k]||'').toUpperCase()});
   (o.vet||[]).forEach(function(v){['desc','vet','notas'].forEach(function(k){v[k]=String(v[k]||'').toUpperCase()})});
+  if(o.crotal&&!validId(o.crotal)){$('#sm').textContent='El número de identificación debe tener 2 letras seguidas de 12 números.';return}
   if(document.querySelector('.bad')){$('#sm').textContent='Hay fechas no válidas o incompletas: corrígelas antes de guardar.';return}
-  if(!o.crotal&&!o.nombre){$('#sm').textContent='Indica al menos el crotal o el nombre.';return}
+  if(!o.crotal&&!o.nombre){$('#sm').textContent='Indica al menos el número de identificación o el nombre.';return}
   try{
     if(col){await col.doc(o.id).set(o)}
     else{var j=animals.findIndex(function(z){return z.id===o.id});if(j>-1)animals[j]=o;else animals.push(o)}
@@ -208,24 +210,23 @@ async function borrar(){
 document.addEventListener('input',function(e){var t=e.target;if((t.tagName=='INPUT'&&t.type=='text')||t.tagName=='TEXTAREA'){var s=t.selectionStart,u=t.value.toUpperCase();if(u!==t.value){t.value=u;try{t.setSelectionRange(s,s)}catch(x){}}}},true);
 function meses(s){var n=d(s);if(!n)return -1;var t=new Date(),m=(t.getFullYear()-n.getFullYear())*12+t.getMonth()-n.getMonth();if(t.getDate()<n.getDate())m--;return m<0?-1:m}
 function anios(s){var n=d(s);if(!n)return -1;var t=new Date(),a=t.getFullYear()-n.getFullYear();if(t.getMonth()<n.getMonth()||(t.getMonth()==n.getMonth()&&t.getDate()<n.getDate()))a--;return a<0?-1:a}
+function edadStats(){
+  var by={},sumM=0,nH=0,mx=0,max=-1,sin=0;
+  animals.forEach(function(a){var mm=meses(a.nacimiento);if(mm<0){sin++;return}if(mm<7||a.sexo!='Hembra')return;var y=Math.floor(mm/12);by[y]=by[y]||{h:0};by[y].h++;sumM+=mm;nH++;if(y>max)max=y;mx=Math.max(mx,by[y].h)});
+  return {by:by,sumM:sumM,nH:nH,mx:mx,max:max,sin:sin};
+}
 function resumen(){
-  var M=animals.filter(function(a){return a.sexo=='Macho'}).length,H=animals.filter(function(a){return a.sexo=='Hembra'}).length;
-  var by={},sumM=0,nH=0,mx=0,max=-1,sin=0,toros=0,novillos=0,vacas=0,ternH=0,ternM=0;
-  animals.forEach(function(a){var m=meses(a.nacimiento),f=a.sexo=='Hembra';if(f&&(a.partos||[]).some(function(p){return p.fecha}))vacas++;if(m<0)return;if(m<7){if(f)ternH++;else ternM++}else if(!f){if(m>=24)toros++;else novillos++}});
+  var H=animals.filter(function(a){return a.sexo=='Hembra'}).length;
+  var toros=0,novillos=0,vacas=0,ternH=0,ternM=0,ternX=0;
+  animals.forEach(function(a){var m=meses(a.nacimiento),f=a.sexo=='Hembra';if(f&&(a.partos||[]).some(function(p){return p.fecha}))vacas++;if(m<0)return;if(m<7){if(f)ternH++;else if(a.sexo=='Macho')ternM++;else ternX++}else if(a.sexo=='Macho'){if(m>=24)toros++;else novillos++}});
   var novillas=Math.max(0,H-vacas-ternH);
   var rvt=(Math.round((toros?vacas/toros:0)*10)/10).toString().replace('.',','),nb='<span style="font-size:22px;font-weight:700">',
   rel='<div class="card" style="text-align:center;grid-column:1/-1">'+(toros?nb+'1</span> TORO POR CADA '+nb+rvt+'</span> '+(rvt=='1'?'VACA':'VACAS'):'<span class="msg">NO HAY TOROS PARA CALCULAR LA RELACIÓN TOROS / VACAS</span>')+'</div>';
-  animals.forEach(function(a){var mm=meses(a.nacimiento);if(mm<0){sin++;return}if(mm<7||a.sexo=='Macho')return;var y=Math.floor(mm/12);by[y]=by[y]||{m:0,h:0};by[y].h++;sumM+=mm;nH++;if(y>max)max=y;mx=Math.max(mx,by[y].h)});
+  var es=edadStats();
   var big=function(n,t){return '<div class="card" style="text-align:center"><div style="font-size:30px;font-weight:700">'+n+'</div><div class="msg" style="margin:0">'+t+'</div></div>'};
-  var h='<h2>Resumen</h2><div class="g" style="grid-template-columns:1fr 1fr"><div style="grid-column:1/-1">'+big(animals.length,'TOTAL ANIMALES')+'</div>'+big(toros,'TOROS')+big(novillos,'NOVILLOS')+big(vacas,'VACAS')+big(novillas,'NOVILLAS')+rel+'<div class="card" style="text-align:center;grid-column:1/-1"><div style="font-size:30px;font-weight:700">'+(ternH+ternM)+'</div><div class="msg" style="margin:0">TERNEROS (MENORES DE 7 MESES)</div><div style="display:flex;justify-content:center;gap:24px;margin-top:8px"><span><b style="font-size:20px">'+ternH+'</b> HEMBRAS</span><span><b style="font-size:20px">'+ternM+'</b> MACHOS</span></div></div></div><h2>Gráfico por edad de las Hembras.</h2>';
-  if(max<0){h+='<div class="card"><div class="msg">Aún no hay hembras de 7 meses o más con fecha de nacimiento.</div></div>'}
-  else{
-    var vh=[],st=mx<=5?1:Math.ceil(mx/5),top=Math.max(1,st*Math.ceil(mx/st));
-    for(var y=0;y<=max;y++){var r=by[y]||{m:0,h:0};vh.push(r.h)}
-    h+=grafCol('',vh,'#d03a3a',top,st)+'<div class="card" style="text-align:center"><span style="font-size:26px;font-weight:700">'+(sumM/nH/12).toFixed(1).replace('.',',')+'</span> AÑOS<div class="msg" style="margin:0">Media de edad de las hembras mayores a 7 meses.</div></div>';
-  }
-  h+=vacasEdad()+sanCard();
-  if(sin)h+='<div class="msg">'+sin+' animal(es) sin fecha de nacimiento válida no aparecen en los gráficos ni en las categorías por edad (toros, novillos, terneros).</div>';
+  var h='<h2>Resumen</h2><div class="g" style="grid-template-columns:1fr 1fr"><div style="grid-column:1/-1">'+big(animals.length,'TOTAL ANIMALES')+'</div>'+big(toros,'TOROS')+big(novillos,'NOVILLOS')+big(vacas,'VACAS')+big(novillas,'NOVILLAS')+rel+'<div class="card" style="text-align:center;grid-column:1/-1"><div style="font-size:30px;font-weight:700">'+(ternH+ternM+ternX)+'</div><div class="msg" style="margin:0">TERNEROS (MENORES DE 7 MESES)</div><div style="display:flex;justify-content:center;gap:24px;margin-top:8px"><span><b style="font-size:20px">'+ternH+'</b> HEMBRAS</span><span><b style="font-size:20px">'+ternM+'</b> MACHOS</span>'+(ternX?'<span><b style="font-size:20px">'+ternX+'</b> SIN DEFINIR</span>':'')+'</div></div></div>';
+  if(es.nH)h+='<div class="card" style="text-align:center;margin-top:10px"><span style="font-size:26px;font-weight:700">'+(es.sumM/es.nH/12).toFixed(1).replace('.',',')+'</span> AÑOS<div class="msg" style="margin:0">Media de edad de las hembras mayores a 7 meses.</div></div>';
+  if(es.sin)h+='<div class="msg">'+es.sin+' animal(es) sin fecha de nacimiento válida no aparecen en los gráficos ni en las categorías por edad (toros, novillos, terneros).</div>';
   return h;
 }
 function grafCol(tit,vals,col,top,step){
@@ -248,8 +249,8 @@ function fechaCampo(el,o,k){
   o[k]=iso;el.classList.toggle('bad',v.length==8&&!ok);
 }
 function fechaFin(el,r){if(el.value&&el.value.length<10)el.classList.add('bad');if(r&&!el.classList.contains('bad'))render()}
-function titulo(x){var n=x.nombre||'',c=String(x.crotal||'').replace(/\D/g,'').slice(-4);return (n+' '+c).trim()||'Nueva ficha'}
-function tit(){var e=$('#tt');if(e)e.textContent=titulo(cur)}
+function titulo(x){var n=x.nombre||'',c=c4(x);return (n+' '+c).trim()||(x._new?'NUEVO ANIMAL':'Sin nombre')}
+function tit(){var e=$('#tt');if(e)e.innerHTML=tituloHtml(cur)}
 var ARW='<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>';
 function btnBack(fn){return '<button onclick="'+fn+'" aria-label="Volver" style="display:flex;align-items:center;justify-content:center;width:48px;height:44px;padding:0">'+ARW+'</button>'}
 function fmtHa(n){return (Math.round(n*100)/100).toString().replace('.',',')}
@@ -291,7 +292,7 @@ async function borrarP(){
 var chkSel=0,chkOrd='crotal',chkDone={};
 function ordenFn(){
   var TO={TORO:0,NOVILLO:1,VACA:2,NOVILLA:3,TERNERO:4};
-  function cn(a){var c=c4(a);return c?parseInt(c,10):1e9}
+  function cn(a){var c=cdig(a);return c?parseInt(c,10):1e9}
   function mn(a){var m=meses(a.nacimiento);return m<0?1e9:m}
   return function(a,b){
     var r=0;
@@ -306,19 +307,31 @@ function tipo(a){
   if(f&&(a.partos||[]).some(function(p){return p.fecha}))return 'VACA';
   if(m>=0&&m<7)return 'TERNERO';
   if(f)return 'NOVILLA';
-  if(m<0)return '—';
+  if(m<0||a.sexo!='Macho')return '—';
   return m>=24?'TORO':'NOVILLO';
 }
-function c4(a){return String(a.crotal||'').replace(/\D/g,'').slice(-4)}
+function idDigits(x){return String(x.crotal||'').replace(/\D/g,'')}
+function cdig(x){var g=idDigits(x);return g.length>=6?g.slice(0,2)+g.slice(-4):g}
+function c4(x){var g=idDigits(x);return g.length>=6?g.slice(0,2)+' '+g.slice(-4):g}
+function codHtml(x){var g=idDigits(x);if(!g)return '';if(g.length<6)return '<b>'+esc(g)+'</b>';return '<span style="font-weight:400">'+g.slice(0,2)+'</span> <b>'+g.slice(-4)+'</b>'}
+function tituloHtml(x){var n=x.nombre||'',c=codHtml(x),h=esc(n)+(n&&c?' ':'')+c;return h||(x._new?'NUEVO ANIMAL':'Sin nombre')}
+function validId(v){return /^[A-Z]{2}\d{12}$/.test(v)}
+function idInp(el){
+  var raw=el.value.toUpperCase().replace(/[^A-Z0-9]/g,''),L='',N='';
+  for(var i=0;i<raw.length;i++){var ch=raw[i];if(L.length<2){if(/[A-Z]/.test(ch))L+=ch}else if(/\d/.test(ch)&&N.length<12)N+=ch}
+  el.value=L+N;cur.crotal=L+N;cur._dirty=1;el.classList.remove('bad');tit();
+}
+function idFin(el){if(el.value&&!validId(el.value))el.classList.add('bad')}
+function fmtCod(d){d=String(d||'').replace(/\D/g,'').slice(0,6);return d.length>2?d.slice(0,2)+' '+d.slice(2):d}
 function checkView(){
   var ps=parcelas.slice().sort(function(a,b){return (a.nombre||'').localeCompare(b.nombre||'')});
   var h='<div class="top">'+btnBack('chk=false;chkSel=0;render()')+'<h1>CHECK LIST</h1></div>'+
-  '<div class="card"><label>Parcela</label><select onchange="chkSel=this.value;render()"><option value="">ELIGE UNA OPCIÓN…</option><option value="*"'+(chkSel=='*'?' selected':'')+'>TODAS</option>'+ps.map(function(p){return '<option value="'+esc(p.id)+'"'+(chkSel===p.id?' selected':'')+'>'+esc(p.nombre)+'</option>'}).join('')+'</select><label style="margin-top:10px">Ordenar por</label><select onchange="chkOrd=this.value;render()"><option value="crotal"'+(chkOrd=='crotal'?' selected':'')+'>CROTAL (DE MENOR A MAYOR)</option><option value="edad"'+(chkOrd=='edad'?' selected':'')+'>EDAD (DE MENOR A MAYOR)</option><option value="tipo"'+(chkOrd=='tipo'?' selected':'')+'>TIPO DE ANIMAL</option></select></div>';
+  '<div class="card"><label>Parcela</label><select onchange="chkSel=this.value;render()"><option value="">ELIGE UNA OPCIÓN…</option><option value="*"'+(chkSel=='*'?' selected':'')+'>TODAS</option>'+ps.map(function(p){return '<option value="'+esc(p.id)+'"'+(chkSel===p.id?' selected':'')+'>'+esc(p.nombre)+'</option>'}).join('')+'</select><label style="margin-top:10px">Ordenar por</label><select onchange="chkOrd=this.value;render()"><option value="crotal"'+(chkOrd=='crotal'?' selected':'')+'>CÓDIGO (DE MENOR A MAYOR)</option><option value="edad"'+(chkOrd=='edad'?' selected':'')+'>EDAD (DE MENOR A MAYOR)</option><option value="tipo"'+(chkOrd=='tipo'?' selected':'')+'>TIPO DE ANIMAL</option></select></div>';
   if(chkSel){
     var l=animals.filter(function(a){return chkSel=='*'||a.parcela===chkSel}).sort(ordenFn());
     var cs='style="padding:8px 6px;border-top:1px solid var(--bd);font-size:15px;color:var(--tx)"';
-    h+='<div class="msg">'+l.length+' animales · <a onclick="chkDone={};render()" style="text-decoration:underline;cursor:pointer">Quitar marcas</a></div><div class="ro" style="margin:0 0 10px"><button class="s" onclick="pdfCheck()">⬇ Descargar PDF</button></div><div class="msg" id="cm"></div><div class="card"><div class="rows"><table class="ck" style="min-width:0"><tr><th></th><th>CROTAL</th><th>NOMBRE</th><th>TIPO</th><th>EDAD</th></tr>'+
-    (l.length?l.map(function(a){return '<tr id="r_'+a.id+'"'+(chkDone[a.id]?' class="done"':'')+'><td '+cs+'><div class="cb" onclick="chkTog(\''+a.id+'\')"></div></td><td '+cs+'>'+esc(c4(a))+'</td><td '+cs+'>'+esc(a.nombre||'')+'</td><td '+cs+'><b>'+tipo(a)+'</b></td><td '+cs+'>'+(anios(a.nacimiento)<0?'—':anios(a.nacimiento))+'</td></tr>'}).join(''):'<tr><td colspan="5" '+cs+'>No hay animales en esta parcela.</td></tr>')+'</table></div></div>';
+    h+='<div class="msg">'+l.length+' animales · <a onclick="chkDone={};render()" style="text-decoration:underline;cursor:pointer">Quitar marcas</a></div><div class="ro" style="margin:0 0 10px"><button class="s" onclick="pdfCheck()">⬇ Descargar PDF</button></div><div class="msg" id="cm"></div><div class="card"><div class="rows"><table class="ck" style="min-width:0"><tr><th></th><th>CÓDIGO</th><th>NOMBRE</th><th>TIPO</th><th>EDAD</th></tr>'+
+    (l.length?l.map(function(a){return '<tr id="r_'+a.id+'"'+(chkDone[a.id]?' class="done"':'')+'><td '+cs+'><div class="cb" onclick="chkTog(\''+a.id+'\')"></div></td><td '+cs+'>'+codHtml(a)+'</td><td '+cs+'>'+esc(a.nombre||'')+'</td><td '+cs+'><b>'+tipo(a)+'</b></td><td '+cs+'>'+(anios(a.nacimiento)<0?'—':anios(a.nacimiento))+'</td></tr>'}).join(''):'<tr><td colspan="5" '+cs+'>No hay animales en esta parcela.</td></tr>')+'</table></div></div>';
   }
   return h;
 }
@@ -326,10 +339,10 @@ async function pdfCheck(){
   var m=$('#cm');
   var l=animals.filter(function(a){return chkSel=='*'||a.parcela===chkSel}).sort(ordenFn());
   var np=chkSel=='*'?'TODAS':nomP(chkSel),hoy=new Date().toISOString().slice(0,10);
-  var ord={crotal:'crotal (de menor a mayor)',edad:'edad (de menor a mayor)',tipo:'tipo de animal'}[chkOrd];
+  var ord={crotal:'código (de menor a mayor)',edad:'edad (de menor a mayor)',tipo:'tipo de animal'}[chkOrd];
   var S=2,PW=595,PH=842,mg=40,cx=[62,135,262,397,495],F='Arial, Helvetica, sans-serif',cvs=[],cv,g,y;
   function pag(){cv=document.createElement('canvas');cv.width=PW*S;cv.height=PH*S;g=cv.getContext('2d');g.scale(S,S);g.fillStyle='#fff';g.fillRect(0,0,PW,PH);g.textBaseline='alphabetic';cvs.push(cv)}
-  function cab(){g.font='bold 11px '+F;g.fillStyle='#5a5a5a';g.textAlign='center';['','CROTAL','NOMBRE','TIPO','EDAD'].forEach(function(t,i){if(t)g.fillText(t,cx[i],y)});y+=6;g.strokeStyle='#999';g.lineWidth=0.8;g.beginPath();g.moveTo(mg,y);g.lineTo(PW-mg,y);g.stroke();y+=20}
+  function cab(){g.font='bold 11px '+F;g.fillStyle='#5a5a5a';g.textAlign='center';['','CÓDIGO','NOMBRE','TIPO','EDAD'].forEach(function(t,i){if(t)g.fillText(t,cx[i],y)});y+=6;g.strokeStyle='#999';g.lineWidth=0.8;g.beginPath();g.moveTo(mg,y);g.lineTo(PW-mg,y);g.stroke();y+=20}
   try{
     pag();
     g.fillStyle='#000';g.font='bold 24px '+F;g.textAlign='left';g.fillText('CHECK LIST',mg,60);
@@ -343,9 +356,13 @@ async function pdfCheck(){
       g.strokeStyle='#000';g.lineWidth=1.2;g.strokeRect(cx[0]-7,y-12,14,14);
       if(dn){g.beginPath();g.moveTo(cx[0]-5,y-10);g.lineTo(cx[0]+5,y);g.moveTo(cx[0]+5,y-10);g.lineTo(cx[0]-5,y);g.stroke()}
       g.font='14px '+F;g.fillStyle=dn?'#8c8c8c':'#000';g.textAlign='center';
-      v.forEach(function(t,i){if(!t)return;var tx=t;if(i==1){while(g.measureText(tx).width>150&&tx.length>1)tx=tx.slice(0,-1)}
-        g.fillText(tx,cx[i+1],y);
-        if(dn){var w=g.measureText(tx).width;g.strokeStyle='#646464';g.lineWidth=0.9;g.beginPath();g.moveTo(cx[i+1]-w/2,y-4);g.lineTo(cx[i+1]+w/2,y-4);g.stroke()}});
+      v.forEach(function(t,i){if(!t)return;var tx=t,xc=cx[i+1],w;
+        if(i==1){while(g.measureText(tx).width>150&&tx.length>1)tx=tx.slice(0,-1)}
+        if(i==0&&t.length==7&&t[2]==' '){
+          var p1=t.slice(0,3),p2=t.slice(3);g.font='14px '+F;var w1=g.measureText(p1).width;g.font='bold 14px '+F;var w2=g.measureText(p2).width;w=w1+w2;
+          var x0=xc-w/2;g.textAlign='left';g.font='14px '+F;g.fillText(p1,x0,y);g.font='bold 14px '+F;g.fillText(p2,x0+w1,y);g.font='14px '+F;g.textAlign='center';
+        }else{g.fillText(tx,xc,y);w=g.measureText(tx).width}
+        if(dn){g.strokeStyle='#646464';g.lineWidth=0.9;g.beginPath();g.moveTo(xc-w/2,y-4);g.lineTo(xc+w/2,y-4);g.stroke()}});
       g.strokeStyle='#dcdcdc';g.lineWidth=0.6;g.beginPath();g.moveTo(mg,y+9);g.lineTo(PW-mg,y+9);g.stroke();y+=26;
     });
     var jp=cvs.map(function(c){var s=atob(c.toDataURL('image/jpeg',0.88).split(',')[1]),u=new Uint8Array(s.length);for(var i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u});
@@ -355,6 +372,155 @@ async function pdfCheck(){
     m.textContent='PDF guardado en las descargas del móvil.';
   }catch(e){m.textContent='No se pudo generar el PDF.'}
 }
+function jpgPdf(jp,cw,ch,w,h){
+  var parts=[],off=[],len=0,te=new TextEncoder();
+  function add(x){var b=typeof x=='string'?te.encode(x):x;parts.push(b);len+=b.length}
+  function start(i){off[i]=len;add(i+' 0 obj\n')}
+  var n=jp.length,kids=[],i;
+  add('%PDF-1.4\n');
+  start(1);add('<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+  for(i=0;i<n;i++)kids.push((3+3*i)+' 0 R');
+  start(2);add('<< /Type /Pages /Kids ['+kids.join(' ')+'] /Count '+n+' >>\nendobj\n');
+  for(i=0;i<n;i++){
+    var p=3+3*i,c=p+1,im=p+2,cs='q '+w+' 0 0 '+h+' 0 0 cm /Im0 Do Q';
+    start(p);add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+w+' '+h+'] /Resources << /XObject << /Im0 '+im+' 0 R >> >> /Contents '+c+' 0 R >>\nendobj\n');
+    start(c);add('<< /Length '+cs.length+' >>\nstream\n'+cs+'\nendstream\nendobj\n');
+    start(im);add('<< /Type /XObject /Subtype /Image /Width '+cw+' /Height '+ch+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+jp[i].length+' >>\nstream\n');add(jp[i]);add('\nendstream\nendobj\n');
+  }
+  var xr=len,tot=3+3*n,x='xref\n0 '+tot+'\n0000000000 65535 f \n';
+  for(i=1;i<tot;i++)x+=('0000000000'+off[i]).slice(-10)+' 00000 n \n';
+  add(x+'trailer\n<< /Size '+tot+' /Root 1 0 R >>\nstartxref\n'+xr+'\n%%EOF');
+  return new Blob(parts,{type:'application/pdf'});
+}
+function wrapTxt(g,t,w,mx){
+  var words=String(t||'').split(/\s+/).filter(Boolean),lines=[],c='';
+  words.forEach(function(wd){var s=c?c+' '+wd:wd;if(g.measureText(s).width>w&&c){lines.push(c);c=wd}else c=s});
+  if(c)lines.push(c);return lines.slice(0,mx||4);
+}
+function loadImg(src){return new Promise(function(ok){if(!src)return ok(null);var i=new Image();i.onload=function(){ok(i)};i.onerror=function(){ok(null)};i.src=src})}
+async function pdfFicha(){
+  var x=cur,m=$('#sm');
+  var S=2,PW=595,PH=842,mg=40,CW=515,F='Arial, Helvetica, sans-serif',cvs=[],cv,g,y;
+  function pag(){cv=document.createElement('canvas');cv.width=PW*S;cv.height=PH*S;g=cv.getContext('2d');g.scale(S,S);g.fillStyle='#fff';g.fillRect(0,0,PW,PH);g.textBaseline='alphabetic';g.textAlign='left';cvs.push(cv);y=mg+10}
+  function need(h){if(y+h>PH-40)pag()}
+  function sec(t){need(50);y+=14;g.font='bold 14px '+F;g.fillStyle='#2e7d32';g.textAlign='left';g.fillText(t,mg,y);y+=6;g.strokeStyle='#2e7d32';g.lineWidth=1;g.beginPath();g.moveTo(mg,y);g.lineTo(mg+CW,y);g.stroke();y+=18}
+  function linea(t,b){need(18);g.font=(b?'bold ':'')+'12px '+F;g.fillStyle=b?'#000':'#666';g.textAlign='left';g.fillText(t,mg,y);y+=16}
+  function tabla(cols,rows){
+    need(34);g.font='bold 10.5px '+F;g.fillStyle='#5a5a5a';g.textAlign='left';
+    cols.forEach(function(c){g.fillText(c.t,mg+c.x,y)});y+=6;g.strokeStyle='#999';g.lineWidth=0.7;g.beginPath();g.moveTo(mg,y);g.lineTo(mg+CW,y);g.stroke();y+=14;
+    rows.forEach(function(r){
+      g.font='12px '+F;
+      var ls=r.map(function(t,i){return wrapTxt(g,t,cols[i].w-8)}),n=Math.max.apply(null,ls.map(function(a){return a.length||1}));
+      need(n*15+10);
+      g.font='12px '+F;g.fillStyle='#000';g.textAlign='left';
+      ls.forEach(function(a,i){a.forEach(function(t,k){g.fillText(t,mg+cols[i].x,y+k*15)})});
+      y+=n*15-3;g.strokeStyle='#e0e0e0';g.lineWidth=0.6;g.beginPath();g.moveTo(mg,y+5);g.lineTo(mg+CW,y+5);g.stroke();y+=14;
+    });
+  }
+  try{
+    var ims=await Promise.all([loadImg(x.fotoCabeza),loadImg(x.fotoLateral)]);
+    pag();
+    g.fillStyle='#000';g.font='bold 26px '+F;g.fillText(titulo(x),mg,y+14);y+=32;
+    linea('Ficha del animal  ·  '+new Date().toLocaleDateString('es-ES'));y+=6;
+    var d=[['Identificación',x.crotal||'—'],['Código',c4(x)||'—'],['Nombre',x.nombre||'—'],['Sexo',x.sexo||'Sin definir'],['Raza',x.raza||'—'],['Nº crotales',(x.ncrotales!==''&&x.ncrotales!=null)?String(x.ncrotales):'—'],['Nacimiento',isoToEs(x.nacimiento)||'—'],['Edad',edad(x.nacimiento)||'—'],['Tipo',tipo(x)],['Parcela',nomP(x.parcela)||'Sin asignar']];
+    d.forEach(function(p,i){var cx=mg+(i%2)*260,cy=y+Math.floor(i/2)*22;g.font='bold 10px '+F;g.fillStyle='#666';g.fillText(p[0].toUpperCase(),cx,cy);g.font='13px '+F;g.fillStyle='#000';g.fillText(p[1],cx+100,cy)});
+    y+=Math.ceil(d.length/2)*22+8;
+    var bw=250,bh=190;
+    [['Cabeza (de frente)',ims[0]],['Animal entero (lateral)',ims[1]]].forEach(function(p,i){
+      var bx=mg+i*(CW-bw);g.fillStyle='#f0f0f0';g.fillRect(bx,y,bw,bh);
+      if(p[1]){var r=Math.min(bw/p[1].width,bh/p[1].height),iw=p[1].width*r,ih=p[1].height*r;g.drawImage(p[1],bx+(bw-iw)/2,y+(bh-ih)/2,iw,ih)}
+      else{g.fillStyle='#999';g.font='12px '+F;g.textAlign='center';g.fillText('Sin foto',bx+bw/2,y+bh/2);g.textAlign='left'}
+      g.fillStyle='#666';g.font='11px '+F;g.textAlign='left';g.fillText(p[0],bx,y+bh+14);
+    });
+    y+=bh+22;
+    if(x.sexo=='Hembra'){sec('PARTOS');
+    var pp=(x.partos||[]).filter(function(p){return p.fecha}).sort(function(a,b){return a.fecha<b.fecha?-1:1});
+    if(!pp.length)linea('Sin partos anotados.');
+    else{
+      var iv=intervalos(pp),med=iv.length?Math.round(iv.reduce(function(a,b){return a+b},0)/iv.length):null;
+      tabla([{t:'FECHA PARTO',x:0,w:80},{t:'SEXO TERNERO',x:80,w:70},{t:'DESTINO',x:150,w:75},{t:'FECHA VENTA',x:225,w:85},{t:'VALOR',x:310,w:70},{t:'INTERVALO',x:380,w:135}],
+        pp.map(function(p,i){return [isoToEs(p.fecha),p.sexo||'',p.destino||'',isoToEs(p.venta),p.valor?String(p.valor).replace('.',',')+' €':'',i?mesesTxt(iv[i-1]):'—']}));
+      linea('Partos: '+pp.length+(med!=null?'   ·   Intervalo medio entre partos: '+mesesTxt(med):''),true);
+    }}
+    sec('DATOS VETERINARIOS');
+    var vv=(x.vet||[]).filter(function(v){return v.fecha||v.desc||v.vet||v.notas}).sort(function(a,b){return (a.fecha||'')<(b.fecha||'')?-1:1});
+    if(!vv.length)linea('Sin registros veterinarios.');
+    else tabla([{t:'FECHA',x:0,w:75},{t:'TIPO',x:75,w:95},{t:'DESCRIPCIÓN / PRODUCTO',x:170,w:150},{t:'VETERINARIO',x:320,w:90},{t:'NOTAS',x:410,w:105}],
+      vv.map(function(v){return [isoToEs(v.fecha),v.tipo||'',v.desc||'',v.vet||'',v.notas||'']}));
+    if(x.notas){sec('NOTAS');String(x.notas).split('\n').forEach(function(par){g.font='12px '+F;wrapTxt(g,par,CW,99).forEach(function(t){need(16);g.font='12px '+F;g.fillStyle='#000';g.textAlign='left';g.fillText(t,mg,y);y+=16})})}
+    var jp=cvs.map(function(c){var s=atob(c.toDataURL('image/jpeg',0.88).split(',')[1]),u=new Uint8Array(s.length);for(var i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u});
+    var slug=String(titulo(x)).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'animal';
+    var dl=await claude.use('downloads');
+    await dl.save({filename:'ficha-'+slug+'-'+new Date().toISOString().slice(0,10)+'.pdf',data:jpgPdf(jp,PW*S,PH*S,PW,PH)});
+    m.textContent='PDF guardado en las descargas del móvil.';
+  }catch(e){m.textContent='No se pudo generar el PDF.'}
+}
+function madreInfo(x){
+  var d=String(x.madre||'').replace(/\D/g,'');
+  if(d.length<6)return '';
+  var c=animals.filter(function(a){return a.sexo=='Hembra'&&cdig(a)===d&&a.id!==x.id});
+  if(!c.length){x.madreId='';return '<span class="msg" style="margin:0">No hay ficha con ese código</span>'}
+  if(c.length==1){x.madreId=c[0].id;return '<div style="font-size:16px;font-weight:700">'+esc(c[0].crotal||'')+'</div>'}
+  return '<select onchange="cur.madreId=this.value;cur._dirty=1"><option value="">ELIGE…</option>'+c.map(function(a){return '<option value="'+esc(a.id)+'"'+(x.madreId===a.id?' selected':'')+'>'+esc(a.crotal||'')+'</option>'}).join('')+'</select>';
+}
+function madreHtml(x){
+  var m=meses(x.nacimiento);
+  if(m<0||m>=7)return '';
+  return '<div style="margin-top:10px"><label>Madre (Código del Animal)</label><div style="display:flex;align-items:center;flex-wrap:wrap;gap:12px"><input inputmode="numeric" maxlength="7" placeholder="00 0000" value="'+esc(fmtCod(x.madre))+'" oninput="madreInp(this)" style="max-width:130px;text-align:center"><div id="madInfo" style="flex:1;text-align:center">'+madreInfo(x)+'</div></div></div>';
+}
+function madreInp(el){var d=el.value.replace(/\D/g,'').slice(0,6);el.value=fmtCod(d);cur.madre=d;cur.madreId='';cur._dirty=1;$('#madInfo').innerHTML=madreInfo(cur)}
+function actMadre(){var e=$('#mad');if(e&&cur)e.innerHTML=madreHtml(cur)}
+function bmTxt(){return 'Última copia de seguridad: '+(ajustes.lastBackup?isoToEs(ajustes.lastBackup):'—')}
+function cajaVacia(t,m){return '<div class="card" style="margin-top:10px"><div style="font-weight:700">'+t+'</div><div class="msg" style="margin:4px 0 0">'+m+'</div></div>'}
+function cardsP(ps){return ps.map(function(p){var c=carga(p);return '<div class="card it" onclick="abrirP(\''+p.id+'\')"><div class="im">🌾</div><div class="tx"><b>'+esc(p.nombre||'Sin nombre')+'</b><span>'+fmtHa(parseFloat(p.superficie)||0)+' ha</span><br><span>'+c.n+' animales</span></div></div>'}).join('')}
+function resultados(){
+  if(!q)return '';
+  var t=q.toLowerCase();
+  var f=animals.filter(function(x){return ((x.crotal||'')+' '+c4(x)+' '+(x.nombre||'')+' '+(x.raza||'')).toLowerCase().indexOf(t)>-1}).sort(function(x,y){return (x.nombre||'').localeCompare(y.nombre||'')});
+  var ps=parcelas.filter(function(p){return String(p.nombre||'').toLowerCase().indexOf(t)>-1}).sort(function(x,y){return (x.nombre||'').localeCompare(y.nombre||'')});
+  if(!f.length&&!ps.length)return '<div class="msg">No hay resultados.</div>';
+  return (f.length?cards(f):'')+cardsP(ps);
+}
+function renderList(){$('#lst').innerHTML=resultados()}
+function informesView(){
+  var es=edadStats(),h='<div class="top">'+btnBack('pend=0;render()')+'<h1>INFORMES</h1></div><h2>Gráfico por edad de las Hembras.</h2>';
+  if(es.max<0)h+='<div class="card"><div class="msg">Aún no hay hembras de 7 meses o más con fecha de nacimiento.</div></div>';
+  else{var vh=[],st=es.mx<=5?1:Math.ceil(es.mx/5),top=Math.max(1,st*Math.ceil(es.mx/st));for(var y=0;y<=es.max;y++)vh.push((es.by[y]||{h:0}).h);h+=grafCol('',vh,'#d03a3a',top,st)}
+  return h+vacasEdad();
+}
+function pendView(){return '<div class="top">'+btnBack('pend=0;render()')+'<h1>'+esc(pend)+'</h1></div><div class="card"><div class="msg">Esta sección se desarrollará más adelante.</div></div>'}
+var MESES_CICLO=14;
+function fmt2(dt){return ('0'+dt.getDate()).slice(-2)+'/'+('0'+(dt.getMonth()+1)).slice(-2)+'/'+dt.getFullYear()}
+function gestion(x,hoyF){
+  var f=(x.partos||[]).map(function(p){return p.fecha}).filter(Boolean).sort();
+  if(x.sexo!='Hembra'||!f.length)return null;
+  var ini=d(f[f.length-1]),fin=new Date(ini.getFullYear(),ini.getMonth()+MESES_CICLO,ini.getDate());
+  var h0=hoyF||new Date(),hoy=new Date(h0.getFullYear(),h0.getMonth(),h0.getDate()),DAY=864e5;
+  var tot=Math.round((fin-ini)/DAY),t=Math.round((hoy-ini)/DAY),r=tot-t,ph=[];
+  if(t>=0){if(t<30)ph.push('FASE POSPARTO');else if(t<90)ph.push('FASE LACTACIÓN INICIAL');else if(t<150)ph.push('FASE LACTACIÓN FINAL');else if(t<210)ph.push('FASE DE DESTETE')}
+  if(r>=0){if(r<30)ph.push('PREPARTO');else if(r<90)ph.push('GESTACIÓN AVANZADA');else if(r<180)ph.push('GESTACIÓN MEDIA');else if(r<270)ph.push('GESTACIÓN INICIAL')}
+  return {ini:ini,fin:fin,t:t,tot:tot,r:r,ph:ph,pct:Math.max(0,Math.min(1,t/tot))};
+}
+function gestionHtml(x){
+  var g=gestion(x);if(!g)return '';
+  var txt=g.ph.length?g.ph.join(' Y '):(g.t<0?'EL ÚLTIMO PARTO ES POSTERIOR A HOY':'FECHA PREVISTA DEL PRÓXIMO PARTO SUPERADA'),pc=(g.pct*100).toFixed(1);
+  return '<h2>Estado de gestión</h2><div class="card">'+
+    '<div style="display:flex;justify-content:space-between;gap:10px;font-size:12px;color:var(--mut);margin-bottom:14px"><span>ÚLTIMO PARTO<br><b style="color:var(--tx);font-size:14px">'+fmt2(g.ini)+'</b></span><span style="text-align:right">PRÓXIMO PARTO<br><b style="color:var(--tx);font-size:14px">'+fmt2(g.fin)+'</b></span></div>'+
+    '<div style="position:relative;height:12px;margin:0 14px;background:var(--bg);border:1px solid var(--bd);border-radius:8px"><div style="position:absolute;left:0;top:0;bottom:0;width:'+pc+'%;background:#2e7d32;border-radius:8px 0 0 8px"></div><div style="position:absolute;top:50%;left:'+pc+'%;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;background:#fff;border:3px solid #2e7d32;box-shadow:0 1px 3px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1">🐄</div></div>'+
+    '<div style="text-align:center;margin-top:18px;font-weight:700">'+txt+'</div><div class="msg" style="display:flex;justify-content:space-between;margin:2px 0 0"><span>Día '+Math.max(0,g.t)+' de '+g.tot+'</span><span>quedan '+Math.max(0,g.r)+' días</span></div></div>';
+}
+function ternerosHtml(x){
+  var t=animals.filter(function(a){var m=meses(a.nacimiento);return a.madreId===x.id&&a.id!==x.id&&m>=0&&m<7});
+  if(!t.length)return '';
+  t.sort(function(a,b){return (a.nacimiento||'')<(b.nacimiento||'')?1:-1});
+  return '<div class="card" style="margin-top:10px"><div style="font-weight:700;margin-bottom:6px">'+(t.length>1?'Terneros':'Ternero')+'</div>'+t.map(function(a){return '<div style="display:flex;flex-wrap:wrap;gap:2px 14px;padding:3px 0"><span>'+esc(a.crotal||'Sin crotal')+'</span><span>'+esc(a.sexo||'')+'</span><span>'+esc(edad(a.nacimiento))+'</span></div>'}).join('')+'</div>';
+}
+var SVGT='<svg width="30" height="30" viewBox="0 0 24 24" fill="none" aria-label="Crotal"><path d="M12 2v3" stroke="#8a6d00" stroke-width="1.6" stroke-linecap="round"/><rect x="6" y="5" width="12" height="17" rx="3.5" fill="#f6c91c" stroke="#8a6d00" stroke-width="1.5"/><circle cx="12" cy="9.5" r="1.9" fill="#fff" stroke="#8a6d00" stroke-width="1.1"/><path d="M9 14.5h6M9 18h6" stroke="#8a6d00" stroke-width="1.4" stroke-linecap="round"/></svg>';
+var SVGV='<svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-label="Correcto"><circle cx="12" cy="12" r="10" fill="#2e7d32"/><path d="M7 12.5l3.2 3.2L17 8.8" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+var SVGN='<svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-label="Ninguno"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="2"/><path d="M6 18L18 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+function ncIcon(v){v=String(v==null?'':v);return v==='0'?SVGN:v==='1'?SVGT:v==='2'?SVGT+SVGV:''}
+function ncOpts(x){var v=String(x.ncrotales==null?'':x.ncrotales);return ['','0','1','2'].map(function(o){return '<option value="'+o+'"'+(v===o?' selected':'')+'>'+(o===''?'—':o)+'</option>'}).join('')}
+function ncInp(el){cur.ncrotales=el.value;cur._dirty=1;var e=$('#ncIcon');if(e)e.innerHTML=ncIcon(el.value)}
 function sanCard(){
   return '<div class="card" style="margin-top:10px"><div style="display:flex;align-items:center;gap:10px"><label style="margin:0;white-space:nowrap;font-size:15px;color:var(--tx);font-weight:600">ÚLTIMO SANEAMIENTO</label><input id="san" style="flex:1;min-width:0;text-align:center" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="'+esc(isoToEs(ajustes.saneamiento))+'" oninput="fechaCampo(this,ajustes,\'saneamiento\')" onchange="guardaAjuste()"></div><div class="msg" id="sanm"></div></div>';
 }
@@ -385,7 +551,7 @@ function cargaHtml(p){
   return '<div class="card" style="margin-top:10px"><div class="msg" style="margin:0 0 4px">Carga ganadera</div>'+
     f('Animales',c.n)+'<div class="msg" style="margin:0 0 6px">'+T.TORO+' toros · '+T.NOVILLO+' novillos · '+T.VACA+' vacas · '+T.NOVILLA+' novillas · '+T.TERNERO+' terneros</div>'+
     f('UGM totales',fmtHa(c.ugm))+f('Animales por hectárea',c.anHa==null?'—':fmtHa(c.anHa))+f('UGM por hectárea',c.ugmHa==null?'—':fmtHa(c.ugmHa))+
-    (c.sin?'<div class="msg">'+c.sin+' animal(es) sin fecha de nacimiento no cuentan en las UGM.</div>':'')+
+    (c.sin?'<div class="msg">'+c.sin+' animal(es) sin fecha de nacimiento o sin sexo definido no cuentan en las UGM.</div>':'')+
     (c.ugmHa==null?'<div class="msg">Indica la superficie para calcular la carga por hectárea.</div>':'')+
     '<div class="msg" style="margin:6px 0 0">UGM (unidad de ganado mayor): ternero 0,4 · novillo/novilla 0,6 · vaca/toro 1.</div></div>';
 }
@@ -399,18 +565,18 @@ function fechaEs(el){
   if(v.length==8){var dd=+v.slice(0,2),mm=+v.slice(2,4),aa=+v.slice(4),t=new Date(aa,mm-1,dd);ok=t.getFullYear()==aa&&t.getMonth()==mm-1&&t.getDate()==dd&&t<=new Date()&&aa>1980;if(ok)iso=v.slice(4)+'-'+v.slice(2,4)+'-'+v.slice(0,2)}
   cur.nacimiento=iso;
   el.classList.toggle('bad',v.length==8&&!ok);
-  $('#ed').textContent=(ok&&edad(iso))||(v.length==8&&!ok?'Fecha no válida':'—');
+  $('#ed').textContent=(ok&&edad(iso))||(v.length==8&&!ok?'Fecha no válida':'—');actMadre();
 }
 function csv(rows){return '\ufeff'+rows.map(function(r){return r.map(function(c){c=String(c==null?'':c);return /[";\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c}).join(';')}).join('\r\n')}
-async function guardaArchivo(name,data){var m=$('#bm');try{var dl=await claude.use('downloads');if(!dl){m.textContent='La descarga no está disponible aquí.';return}await dl.save({filename:name,data:data});m.textContent='Archivo preparado: '+name}catch(e){m.textContent=(e&&e.code=='declined')?'Descarga cancelada.':'No se pudo descargar el archivo.'}}
+async function guardaArchivo(name,data){var m=$('#bm');try{var dl=await claude.use('downloads');if(!dl){m.textContent='La descarga no está disponible aquí.';return}await dl.save({filename:name,data:data});m.textContent=bmTxt()}catch(e){m.textContent=(e&&e.code=='declined')?'Descarga cancelada.':'No se pudo descargar el archivo.'}}
 function expCsv(t){
   var r=[],hoy=new Date().toISOString().slice(0,10);
-  if(t=='partos'){r.push(['Crotal','Nombre','Sexo','Raza','Nacimiento','Edad','Parcela','Fecha parto','Sexo ternero','Destino','Fecha venta','Valor €','Intervalo (días)']);
-    animals.forEach(function(a){var p=(a.partos||[]).slice().sort(function(x,y){return (x.fecha||'')<(y.fecha||'')?-1:1});var base=[a.crotal,a.nombre,a.sexo,a.raza,isoToEs(a.nacimiento),edad(a.nacimiento),nomP(a.parcela)];
+  if(t=='partos'){r.push(['Número de identificación','Código del animal','Nombre','Sexo','Raza','Nº crotales','Nacimiento','Edad','Parcela','Fecha parto','Sexo ternero','Destino','Fecha venta','Valor €','Intervalo (días)']);
+    animals.forEach(function(a){var p=(a.partos||[]).slice().sort(function(x,y){return (x.fecha||'')<(y.fecha||'')?-1:1});var base=[a.crotal,c4(a),a.nombre,a.sexo,a.raza,a.ncrotales||'',isoToEs(a.nacimiento),edad(a.nacimiento),nomP(a.parcela)];
       if(!p.length){r.push(base.concat(['','','','','','']));return}
       p.forEach(function(x,i){var iv=(i>0&&x.fecha&&p[i-1].fecha)?Math.round((d(x.fecha)-d(p[i-1].fecha))/864e5):'';r.push(base.concat([isoToEs(x.fecha),x.sexo,x.destino,isoToEs(x.venta),String(x.valor||'').replace('.',','),iv]))})})}
-  else{r.push(['Crotal','Nombre','Fecha','Tipo','Descripción / producto','Veterinario','Notas']);
-    animals.forEach(function(a){(a.vet||[]).forEach(function(v){r.push([a.crotal,a.nombre,isoToEs(v.fecha),v.tipo,v.desc,v.vet,v.notas])})})}
+  else{r.push(['Número de identificación','Código del animal','Nombre','Fecha','Tipo','Descripción / producto','Veterinario','Notas']);
+    animals.forEach(function(a){(a.vet||[]).forEach(function(v){r.push([a.crotal,c4(a),a.nombre,isoToEs(v.fecha),v.tipo,v.desc,v.vet,v.notas])})})}
   guardaArchivo('ganaderia-'+t+'-'+hoy+'.csv',csv(r));
 }
 function expJson(){ajustes.lastBackup=new Date().toISOString().slice(0,10);if(acol)acol.doc('general').set(ajustes);guardaArchivo('ganaderia-copia-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify({version:1,animales:animals,parcelas:parcelas,ajustes:ajustes},null,1))}
