@@ -1,6 +1,6 @@
 {
- "name": "Ficha ganadera",
- "short_name": "Ganadería",
+ "name": "Cuaderno de Campo",
+ "short_name": "MiGanadería",
  "description": "Fichas, parcelas y check list de la ganadería",
  "start_url": "./",
  "scope": "./",
